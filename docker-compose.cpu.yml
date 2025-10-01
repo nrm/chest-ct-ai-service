@@ -1,0 +1,14 @@
+# CPU-only configuration (fallback for hosts without GPU)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.cpu.yml up
+
+services:
+  radiassist-api:
+    environment:
+      - CUDA_VISIBLE_DEVICES=""
+      - FORCE_CPU_MODE=true
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G

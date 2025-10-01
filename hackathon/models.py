@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+import torch
+
+from radiassist.models.covid19_classifier import COVID19Classifier
+from radiassist.models.luna16_detector import LUNA16NoduleDetector
+
+
+def load_covid_model(workspace_path: str, device: torch.device) -> Optional[COVID19Classifier]:
+    """Load pretrained COVID19 classifier model (ResNet50 MIL)."""
+    # Try new classifier checkpoints (fold_1 showed best AUC: 0.9839)
+    classifier_path = Path("/mnt/pcephfs/lct/Code/radiassist-chest/outputs/covid19_classifier/20250930_072700/fold_1/checkpoints/best_auc.pth")
+
+    # Fallback paths
+    if not classifier_path.exists():
+        # Try workspace location
+        classifier_path = Path(workspace_path) / "models" / "covid19_classifier_fold1_best_auc.pth"
+
+    if not classifier_path.exists():
+        print(f"❌ COVID19 classifier not found at {classifier_path}")
+        return None
+
+    # Create model with same architecture as training
+    model = COVID19Classifier(
+        n_slices=64,
+        pretrained=False,  # Weights already trained
+        freeze_backbone=False,
+        dropout=0.5
+    )
+
+    load_kwargs = {"map_location": device}
+
+    try:
+        # Try modern PyTorch loading
+        checkpoint = torch.load(classifier_path, weights_only=False, **load_kwargs)
+    except TypeError:
+        # Fallback for older PyTorch versions
+        checkpoint = torch.load(classifier_path, **load_kwargs)
+    except Exception as e:
+        # Handle numpy compatibility issues
+        if "numpy._core" in str(e):
+            print(f"⚠️  Numpy compatibility issue, trying with pickle protocol fix...")
+            import pickle
+            with open(classifier_path, 'rb') as f:
+                checkpoint = pickle.load(f)
+        else:
+            raise e
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(device)
+    model.eval()
+    print(f"✅ COVID19 classifier loaded from {classifier_path.name}")
+    print(f"   Architecture: ResNet50 2D MIL (AUC: 0.9839)")
+    return model
+
+
+def load_luna_model(workspace_path: str, device: torch.device) -> Optional[LUNA16NoduleDetector]:
+    """Load the most recent LUNA16 detector model if available."""
+    # Try local API models first, then fallback to workspace
+    local_model_dir = Path(__file__).parent.parent / "models"
+    workspace_model_dir = Path(workspace_path) / "models"
+
+    # Check local models first
+    local_luna_models = sorted(local_model_dir.glob("luna16_detector_*.pth"))
+    workspace_luna_models = sorted(workspace_model_dir.glob("luna16_detector_*.pth"))
+
+    luna_models = local_luna_models if local_luna_models else workspace_luna_models
+
+    if not luna_models:
+        print("❌ LUNA16 model not found")
+        return None
+
+    latest_model = luna_models[-1]
+    print(f"🔍 Loading LUNA16 model: {latest_model}")
+
+    detector = LUNA16NoduleDetector(
+        in_channels=1,
+        num_classes=2,
+        feature_maps=[32, 64, 128, 256],
+        use_attention=True,
+        use_checkpoint=False,
+    )
+
+    load_kwargs = {"map_location": device}
+    try:
+        checkpoint = torch.load(latest_model, weights_only=False, **load_kwargs)
+    except TypeError:
+        checkpoint = torch.load(latest_model, **load_kwargs)
+
+    detector.load_state_dict(checkpoint["model_state_dict"])
+    detector.to(device)
+    detector.eval()
+    print("✅ LUNA16 model loaded successfully")
+    return detector
+
+
+__all__ = ["load_covid_model", "load_luna_model"]

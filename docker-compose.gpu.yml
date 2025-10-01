@@ -1,0 +1,15 @@
+# GPU-enabled configuration (modern Docker Compose approach)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+
+services:
+  radiassist-api:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility

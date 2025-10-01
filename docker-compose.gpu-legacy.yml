@@ -1,0 +1,17 @@
+# Legacy GPU configuration (for older Docker or specific hardware)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu-legacy.yml up
+
+services:
+  radiassist-api:
+    runtime: nvidia
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    volumes:
+      - /dev/nvidia-caps:/dev/nvidia-caps:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility

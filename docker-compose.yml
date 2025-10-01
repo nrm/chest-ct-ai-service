@@ -1,0 +1,44 @@
+services:
+  radiassist-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Build arguments for customization
+      args:
+        - PYTHON_VERSION=3.11
+      # Enable BuildKit for better caching
+      target: runtime
+    image: radiassist-api:latest
+    container_name: radiassist-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - MAX_CONCURRENT_JOBS=2
+      - PROCESSING_TIMEOUT=600
+    volumes:
+      # Persistent data storage
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Development: mount source for hot reload (comment out for production)
+      # - ./main.py:/app/main.py
+      # - ./hackathon:/app/hackathon
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Allow more time for model loading
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
