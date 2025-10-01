@@ -5,6 +5,7 @@ Validates input data to ensure it's chest CT and detect potential corruptions
 
 import pydicom
 import numpy as np
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 import logging
@@ -452,14 +453,20 @@ def validate_chest_ct(dicom_dir: str) -> ValidationReport:
 # Example usage
 if __name__ == "__main__":
     # Test validation
-    test_dir = Path("/mnt/pcephfs/lct/LCT-dataset/norma_anon")
-    if test_dir.exists():
-        validator = ChestCTValidator()
-        report = validator.validate_dicom_directory(test_dir)
+    sample_dir = os.getenv("RADIASSIST_SAMPLE_DICOM")
+    if not sample_dir:
+        print("Set RADIASSIST_SAMPLE_DICOM to run this example.")
+    else:
+        test_dir = Path(sample_dir).expanduser()
+        if test_dir.exists():
+            validator = ChestCTValidator()
+            report = validator.validate_dicom_directory(test_dir)
 
-        print(f"🔍 Validation Result: {report.result.value}")
-        print(f"🎯 Confidence: {report.confidence:.3f}")
-        print(f"📊 Details: {report.slice_count} slices, {report.spatial_dimensions}")
-        print(f"⚠️  Warnings: {len(report.warnings)}")
-        for warning in report.warnings:
-            print(f"   - {warning}")
+            print(f"🔍 Validation Result: {report.result.value}")
+            print(f"🎯 Confidence: {report.confidence:.3f}")
+            print(f"📊 Details: {report.slice_count} slices, {report.spatial_dimensions}")
+            print(f"⚠️  Warnings: {len(report.warnings)}")
+            for warning in report.warnings:
+                print(f"   - {warning}")
+        else:
+            print(f"Sample directory not found: {test_dir}")

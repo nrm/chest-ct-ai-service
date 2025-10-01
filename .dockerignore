@@ -1,0 +1,48 @@
+# Development files
+.git
+.gitignore
+.gitattributes
+*.md
+README*
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and data (will be mounted as volumes)
+logs/
+data/
+*.log
+
+# Docker files (not needed inside container)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test files
+test_*
+*_test.py
+tests/
+
+# Documentation
+docs/
+# *.txt  # Commented out to allow requirements.txt

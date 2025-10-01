@@ -11,12 +11,11 @@ from radiassist.models.luna16_detector import LUNA16NoduleDetector
 
 def load_covid_model(workspace_path: str, device: torch.device) -> Optional[COVID19Classifier]:
     """Load pretrained COVID19 classifier model (ResNet50 MIL)."""
-    # Try new classifier checkpoints (fold_1 showed best AUC: 0.9839)
-    classifier_path = Path("/mnt/pcephfs/lct/Code/radiassist-chest/outputs/covid19_classifier/20250930_072700/fold_1/checkpoints/best_auc.pth")
+    # Try local API weights first (repo-stored model)
+    classifier_path = Path(__file__).parent.parent / "models" / "covid19_classifier_fold1_best_auc.pth"
 
-    # Fallback paths
+    # Fallback to legacy workspace layout
     if not classifier_path.exists():
-        # Try workspace location
         classifier_path = Path(workspace_path) / "models" / "covid19_classifier_fold1_best_auc.pth"
 
     if not classifier_path.exists():

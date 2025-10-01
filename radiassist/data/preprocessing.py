@@ -4,6 +4,7 @@ Critical component implementing cubic interpolation for COVID19 sparse Z-axis
 """
 
 import logging
+import os
 import numpy as np
 import nibabel as nib
 import pydicom
@@ -419,13 +420,16 @@ if __name__ == "__main__":
     # Test with COVID19 data
     preprocessor = create_preprocessor("covid19")
 
-    # Example processing
-    volume_path = Path("/mnt/pcephfs/lct/COVID19_1110/studies/CT-0/study_0172.nii.gz")
-    if volume_path.exists():
-        try:
-            processed_volume, metadata = preprocessor.process_volume(volume_path, "covid19")
-            print(f"Successfully processed: {metadata}")
-        except Exception as e:
-            print(f"Processing failed: {e}")
+    sample_volume = os.getenv("RADIASSIST_SAMPLE_VOLUME")
+    if not sample_volume:
+        print("Set RADIASSIST_SAMPLE_VOLUME to run this example.")
     else:
-        print("Example volume not found")
+        volume_path = Path(sample_volume).expanduser()
+        if volume_path.exists():
+            try:
+                processed_volume, metadata = preprocessor.process_volume(volume_path, "covid19")
+                print(f"Successfully processed: {metadata}")
+            except Exception as e:
+                print(f"Processing failed: {e}")
+        else:
+            print(f"Example volume not found: {volume_path}")

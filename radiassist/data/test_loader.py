@@ -6,6 +6,7 @@ Handles ZIP archives with DICOM files for final evaluation
 import zipfile
 import tempfile
 import shutil
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import pydicom
@@ -373,20 +374,29 @@ class TestDataset(Dataset):
             }
 
 
-def create_test_dataset(test_data_dir: str = "/mnt/pcephfs/lct/LCT-dataset") -> TestDataset:
+def create_test_dataset(test_data_dir: Optional[str] = None) -> TestDataset:
     """Create test dataset for final validation"""
-    return TestDataset(Path(test_data_dir))
+    if test_data_dir is None:
+        data_env = os.getenv("RADIASSIST_TEST_DATA_PATH")
+        base_dir = Path(data_env).expanduser() if data_env else Path(__file__).resolve().parents[2] / "datasets" / "LCT-dataset"
+    else:
+        base_dir = Path(test_data_dir).expanduser()
+    return TestDataset(base_dir)
 
 
 if __name__ == "__main__":
     # Quick test
-    dataset = create_test_dataset()
+    try:
+        dataset = create_test_dataset()
+    except Exception as exc:
+        print(f"❌ Unable to load test dataset: {exc}")
+        print("Set RADIASSIST_TEST_DATA_PATH to point to a directory with hackathon ZIP files.")
+    else:
+        print("\n🧪 TEST DATASET SUMMARY")
+        print("=" * 40)
 
-    print(f"\n🧪 TEST DATASET SUMMARY")
-    print("=" * 40)
-
-    for i, sample in enumerate(dataset):
-        print(f"Study {i+1}: {sample['zip_name']}")
-        print(f"  Expected label: {sample['expected_label']}")
-        print(f"  Volume shape: {sample['volume'].shape}")
-        print(f"  Original shape: {sample['original_shape']}")
+        for i, sample in enumerate(dataset):
+            print(f"Study {i+1}: {sample['zip_name']}")
+            print(f"  Expected label: {sample['expected_label']}")
+            print(f"  Volume shape: {sample['volume'].shape}")
+            print(f"  Original shape: {sample['original_shape']}")

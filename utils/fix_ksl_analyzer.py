@@ -255,10 +255,12 @@ def test_fixed_ksl():
     """Test the fixed KSL analyzer"""
     analyzer = FixedKSLAnalyzer()
 
+    data_root_env = os.getenv('RADIASSIST_TEST_DATA_PATH')
+    data_root = Path(data_root_env).expanduser() if data_root_env else Path(__file__).resolve().parents[1] / 'datasets' / 'LCT-dataset'
     test_files = [
-        '/mnt/pcephfs/lct/LCT-dataset/norma_anon.zip',
-        '/mnt/pcephfs/lct/LCT-dataset/pneumonia_anon.zip',
-        '/mnt/pcephfs/lct/LCT-dataset/pneumotorax_anon.zip'
+        data_root / 'norma_anon.zip',
+        data_root / 'pneumonia_anon.zip',
+        data_root / 'pneumotorax_anon.zip'
     ]
 
     ground_truth = [0, 1, 1]

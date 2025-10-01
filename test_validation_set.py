@@ -8,6 +8,7 @@ Usage:
     python test_validation_set.py --validation-set luna16 --limit 20
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 import pandas as pd
@@ -31,7 +32,9 @@ def main():
     args = parser.parse_args()
 
     # Setup paths
-    base_path = Path('/mnt/pcephfs/lct/radiassist_workspace/testsets')
+    workspace_env = os.getenv('RADIASSIST_WORKSPACE')
+    workspace_path = Path(workspace_env).expanduser() if workspace_env else Path(__file__).resolve().parent
+    base_path = workspace_path / 'testsets'
     validation_dir = base_path / f'{args.validation_set}_validation'
 
     if not validation_dir.exists():
@@ -112,7 +115,7 @@ def main():
     # Save results
     if results:
         from hackathon.reporting import create_excel_output
-        create_excel_output(results, str(tester.workspace_path))
+        excel_path, csv_path = create_excel_output(results, str(tester.workspace_path))
 
     if results:
         print()
@@ -120,8 +123,8 @@ def main():
         print("✅ VALIDATION TESTING COMPLETE!")
         print("=" * 80)
         print(f"📊 Processed: {len(results)} cases")
-        print(f"📄 Results saved to: /mnt/pcephfs/lct/radiassist_workspace/hackathon_test_results.xlsx")
-        print(f"📄 CSV results: /mnt/pcephfs/lct/radiassist_workspace/hackathon_test_results.csv")
+        print(f"📄 Results saved to: {excel_path}")
+        print(f"📄 CSV results: {csv_path}")
         print()
 
         # Quick summary
@@ -147,7 +150,7 @@ def main():
 
         print()
         print("💡 Tip: View detailed results with:")
-        print("   head -20 /mnt/pcephfs/lct/radiassist_workspace/hackathon_test_results.csv")
+        print(f"   head -20 {csv_path}")
 
         return 0
     else:

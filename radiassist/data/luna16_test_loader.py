@@ -7,6 +7,7 @@ Preserves maximum spatial information without downsampling
 import zipfile
 import tempfile
 import shutil
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import pydicom
@@ -238,16 +239,20 @@ def create_luna16_test_loader(test_data_dir: Optional[str] = None, max_slices: i
 # Example usage and testing
 if __name__ == "__main__":
     # Test the loader
-    test_dir = Path("/mnt/pcephfs/lct/LCT-dataset")
-    if test_dir.exists():
-        loader = LUNA16TestDataLoader(test_dir)
-
-        print("🧪 Testing LUNA16TestDataLoader...")
-        test_cases = loader.load_all_test_cases()
-
-        print(f"\n📊 Loaded {len(test_cases)} test cases:")
-        for filename, (volume, label) in test_cases.items():
-            print(f"  {filename}: {volume.shape}, label={label}")
-            print(f"    Stats: min={volume.min():.3f}, max={volume.max():.3f}, mean={volume.mean():.3f}")
+    data_root = os.getenv("RADIASSIST_TEST_DATA_PATH")
+    if not data_root:
+        print("Set RADIASSIST_TEST_DATA_PATH to run this example.")
     else:
-        print(f"❌ Test directory not found: {test_dir}")
+        test_dir = Path(data_root).expanduser()
+        if test_dir.exists():
+            loader = LUNA16TestDataLoader(test_dir)
+
+            print("🧪 Testing LUNA16TestDataLoader...")
+            test_cases = loader.load_all_test_cases()
+
+            print(f"📊 Loaded {len(test_cases)} test cases:")
+            for filename, (volume, label) in test_cases.items():
+                print(f"  {filename}: {volume.shape}, label={label}")
+                print(f"    Stats: min={volume.min():.3f}, max={volume.max():.3f}, mean={volume.mean():.3f}")
+        else:
+            print(f"❌ Test directory not found: {test_dir}")

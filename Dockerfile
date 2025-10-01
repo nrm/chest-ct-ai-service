@@ -14,6 +14,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy and install Python dependencies (this layer will be cached)
+# Install heavy, less frequently changed Python packages first
+COPY requirements.heavy.txt .
+RUN pip install --no-cache-dir -r requirements.heavy.txt
+
+# Install lighter, more frequently changed packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -24,6 +29,7 @@ FROM dependencies as application
 
 # Copy application source code (frequently changing files)
 COPY main.py .
+COPY covid19/ ./covid19/
 COPY hackathon/ ./hackathon/
 COPY radiassist/ ./radiassist/
 

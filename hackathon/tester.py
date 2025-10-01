@@ -47,10 +47,17 @@ class HackathonTester:
     """End-to-end tester for hackathon datasets and validation suites."""
 
     def __init__(self, max_workers: int = 1, disable_validation: bool = False):
-        self.test_data_path = Path("/mnt/pcephfs/lct/LCT-dataset")
-        self.workspace_path = Path("/mnt/pcephfs/lct/radiassist_workspace")
+        default_workspace = Path(__file__).resolve().parents[1]
+        workspace_env = os.getenv("RADIASSIST_WORKSPACE")
+        self.workspace_path = Path(workspace_env).expanduser() if workspace_env else default_workspace
+
+        test_data_env = os.getenv("RADIASSIST_TEST_DATA_PATH")
+        self.test_data_path = Path(test_data_env).expanduser() if test_data_env else self.workspace_path / "datasets" / "LCT-dataset"
+
+        validation_env = os.getenv("RADIASSIST_VALIDATION_PATH")
+        self.validation_sets_path = Path(validation_env).expanduser() if validation_env else self.workspace_path / "testsets"
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.validation_sets_path = self.workspace_path / "testsets"
         self.covid_validation_threshold = 0.40
         self.max_workers = max(1, int(max_workers))
         self.disable_validation = disable_validation
