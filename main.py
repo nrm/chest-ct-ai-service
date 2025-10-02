@@ -16,7 +16,7 @@ from typing import Dict, Optional
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 import uvicorn
@@ -63,6 +63,7 @@ check_gpu_availability()
 # Configuration
 MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
 PROCESSING_TIMEOUT = int(os.getenv("PROCESSING_TIMEOUT", "600"))  # 10 minutes
+VALIDATION_BYPASS_KEY = os.getenv("VALIDATION_BYPASS_KEY")
 
 app = FastAPI(
     title="RadiAssist Chest CT API",
@@ -109,7 +110,11 @@ def process_dicom_zip_sync(task_id: str, zip_path: Path, output_dir: Path):
         print(f"📁 Output directory: {output_dir}")
 
         # Initialize hackathon tester
-        tester = HackathonTester()
+        task_config = tasks.get(task_id, {})
+        disable_validation = task_config.get("disable_validation", False)
+        tester = HackathonTester(disable_validation=disable_validation)
+        if disable_validation:
+            print("⚠️ Validation disabled for this task")
 
         # Process single case
         result = tester.test_single_case(str(zip_path))
@@ -171,7 +176,8 @@ async def process_dicom_zip(task_id: str, zip_path: Path, output_dir: Path):
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_dicom_zip(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    validation_key: Optional[str] = Form(None)
 ):
     """Upload DICOM ZIP file for processing"""
 
@@ -186,6 +192,14 @@ async def upload_dicom_zip(
             status_code=429,
             detail=f"Processing queue is full. Maximum {MAX_CONCURRENT_JOBS} concurrent jobs allowed. Try again later."
         )
+    disable_validation = False
+    if validation_key:
+        if not VALIDATION_BYPASS_KEY:
+            raise HTTPException(status_code=403, detail="Validation bypass is not configured")
+        if validation_key != VALIDATION_BYPASS_KEY:
+            raise HTTPException(status_code=403, detail="Invalid validation bypass key")
+        disable_validation = True
+
 
     # Generate task ID
     task_id = str(uuid.uuid4())
@@ -195,7 +209,8 @@ async def upload_dicom_zip(
         "task_id": task_id,
         "status": "pending",
         "created_at": datetime.now().isoformat(),
-        "filename": file.filename
+        "filename": file.filename,
+        "disable_validation": disable_validation
     }
 
     try:
@@ -232,10 +247,14 @@ async def upload_dicom_zip(
         # Start background processing in thread pool (non-blocking)
         asyncio.create_task(process_dicom_zip(task_id, zip_path, task_results_dir))
 
+        message = f"File uploaded successfully. Found {len(dicom_files)} DICOM files."
+        if disable_validation:
+            message += " Validation bypassed."
+
         return UploadResponse(
             task_id=task_id,
             status="pending",
-            message=f"File uploaded successfully. Found {len(dicom_files)} DICOM files."
+            message=message
         )
 
     except Exception as e:

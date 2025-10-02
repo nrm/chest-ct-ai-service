@@ -209,7 +209,7 @@ class AdaptivePreprocessor:
         try:
             if dicom_path.is_file():
                 # Single DICOM file
-                ds = pydicom.dcmread(dicom_path)
+                ds = pydicom.dcmread(dicom_path, force=True)
                 volume = ds.pixel_array.astype(np.float32)
 
                 # Apply rescale slope and intercept

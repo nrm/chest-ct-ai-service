@@ -90,12 +90,13 @@ def run_covid_triage(model, device: torch.device, dicom_dir: str) -> Tuple[float
         volume = loader.load_dicom_directory(dicom_dir)
         volume_tensor = torch.from_numpy(volume).float().unsqueeze(0).to(device)
 
-        print(f"    🔢 Input tensor shape: {volume_tensor.shape}")
-        print(
-            "    📊 Input stats: "
-            f"min={volume_tensor.min():.3f}, max={volume_tensor.max():.3f}, "
-            f"mean={volume_tensor.mean():.3f}"
-        )
+        # Compact mode: comment out verbose logs
+        # print(f"    🔢 Input tensor shape: {volume_tensor.shape}")
+        # print(
+        #     "    📊 Input stats: "
+        #     f"min={volume_tensor.min():.3f}, max={volume_tensor.max():.3f}, "
+        #     f"mean={volume_tensor.mean():.3f}"
+        # )
 
         with torch.no_grad():
             print("    🧠 Running COVID19 classifier forward pass...")
@@ -105,12 +106,12 @@ def run_covid_triage(model, device: torch.device, dicom_dir: str) -> Tuple[float
             # Handle both return formats
             if isinstance(outputs, tuple):
                 logits, attention_weights = outputs
-                print(f"    📊 Attention weights shape: {attention_weights.shape}")
+                # print(f"    📊 Attention weights shape: {attention_weights.shape}")
             else:
                 logits = outputs
 
-            print(f"    📈 Model logits shape: {logits.shape}")
-            print(f"    🎯 Raw logits: {logits[0].item():.4f}")
+            # print(f"    📈 Model logits shape: {logits.shape}")
+            # print(f"    🎯 Raw logits: {logits[0].item():.4f}")
 
             # Apply sigmoid to get probability
             pathology_prob = torch.sigmoid(logits[0]).item()
@@ -143,6 +144,93 @@ def _sample_slices(volume: np.ndarray, n_slices: int = 16) -> np.ndarray:
     return volume
 
 
+def compute_iou_3d(pos1: tuple, pos2: tuple, patch_size: int = 64) -> float:
+    """Compute 3D IoU between two nodule positions (bounding boxes).
+
+    Args:
+        pos1, pos2: (z, y, x) positions of detected nodules
+        patch_size: Size of detection patch (default 64)
+
+    Returns:
+        IoU value [0.0-1.0]
+    """
+    z1, y1, x1 = pos1
+    z2, y2, x2 = pos2
+
+    # Calculate intersection
+    z_overlap = max(0, min(z1 + patch_size, z2 + patch_size) - max(z1, z2))
+    y_overlap = max(0, min(y1 + patch_size, y2 + patch_size) - max(y1, y2))
+    x_overlap = max(0, min(x1 + patch_size, x2 + patch_size) - max(x1, x2))
+
+    intersection = z_overlap * y_overlap * x_overlap
+
+    # Calculate union
+    volume_box = patch_size ** 3
+    union = 2 * volume_box - intersection
+
+    return intersection / union if union > 0 else 0.0
+
+
+def apply_nms_3d(detections: list, iou_threshold: float = 0.3, patch_size: int = 64) -> list:
+    """Apply Non-Maximum Suppression to remove overlapping detections.
+
+    Args:
+        detections: List of dicts with 'position' and 'confidence'
+        iou_threshold: IoU threshold for suppression (default 0.3)
+        patch_size: Size of detection patch (default 64)
+
+    Returns:
+        Filtered list of detections
+    """
+    if not detections:
+        return []
+
+    # Sort by confidence (descending)
+    sorted_dets = sorted(detections, key=lambda x: x['confidence'], reverse=True)
+
+    keep = []
+    while sorted_dets:
+        # Keep highest confidence detection
+        best = sorted_dets.pop(0)
+        keep.append(best)
+
+        # Remove overlapping detections
+        sorted_dets = [
+            d for d in sorted_dets
+            if compute_iou_3d(best['position'], d['position'], patch_size) < iou_threshold
+        ]
+
+    return keep
+
+
+def filter_nodules_by_size(detections: list, spacing_mm: float = 1.0,
+                           min_size_mm: float = 3.0, max_size_mm: float = 35.0,
+                           patch_size: int = 64) -> list:
+    """Filter nodules by physical size constraints.
+
+    Args:
+        detections: List of nodule detections
+        spacing_mm: Voxel spacing in mm (default 1.0 for resampled data)
+        min_size_mm: Minimum nodule size in mm (default 3mm)
+        max_size_mm: Maximum nodule size in mm (default 35mm)
+        patch_size: Detection patch size in voxels (default 64)
+
+    Returns:
+        Filtered detections (removes patches that are too small/large to be real nodules)
+    """
+    # Convert patch size to mm
+    patch_size_mm = patch_size * spacing_mm
+
+    # For now, we only know patch size, not actual nodule size
+    # Simple heuristic: patch should be reasonable size for nodules
+    # Metastases: 4-18mm, large nodules: 10-30mm
+    # Patch of 64 voxels @ 1mm = 64mm is larger than max nodule
+    # So we keep all detections for now (size filtering would need segmentation)
+
+    # Future improvement: estimate nodule size from confidence heatmap
+    return detections
+
+
 def load_nifti_volume(nifti_path: Path, n_slices: int = 16) -> np.ndarray:
     """Load and preprocess a NIfTI volume similarly to training pipeline."""
     nii_img = nib.load(str(nifti_path))
@@ -171,15 +259,44 @@ def run_luna_detection(model, device: torch.device, dicom_dir: str) -> Tuple[dic
         }, "LUNA16 model not loaded"
 
     try:
-        # Use dedicated LUNA16 loader with optimized slice limit (160 slices = ~2-3x speedup)
-        loader = LUNA16TestDataLoader(max_slices=160)
+        # CRITICAL: For cancer dataset, use FULL resolution (no cropping)
+        # This ensures all nodules are visible and coordinates are valid
+        # Check if this might be cancer dataset (thin slices)
+        from pathlib import Path
+        import pydicom
+
+        # Quick check: load one DICOM to check slice thickness
+        dicom_dir_path = Path(dicom_dir)
+        sample_dicom = None
+        for f in dicom_dir_path.rglob("*"):
+            if f.is_file():
+                try:
+                    sample_dicom = pydicom.dcmread(str(f), force=True, stop_before_pixels=True)
+                    break
+                except:
+                    continue
+
+        # If thin slices (< 3mm), likely cancer dataset - use full resolution
+        slice_thickness = float(getattr(sample_dicom, 'SliceThickness', 5.0)) if sample_dicom else 5.0
+        use_full_res = slice_thickness < 3.0
+
+        if use_full_res:
+            print(f"    📏 Thin slices detected ({slice_thickness}mm), using FULL resolution for cancer")
+            max_slices = 10000  # No practical limit
+            resize_inplane = False  # Keep native resolution for cancer
+        else:
+            print(f"    📏 Thick slices ({slice_thickness}mm), using optimized 160-slice limit")
+            max_slices = 160
+            resize_inplane = True  # Standard 512x512 for LUNA16
+
+        loader = LUNA16TestDataLoader(max_slices=max_slices, resize_inplane=resize_inplane)
         volume = loader.load_dicom_directory(dicom_dir)
 
-        print(f"    📐 LUNA16 input volume shape: {volume.shape}")
+        # print(f"    📐 LUNA16 input volume shape: {volume.shape}")
 
         patch_size = 64
         stride = 32
-        confidence_threshold = 0.6
+        confidence_threshold = 0.25  # Balanced threshold for nodule detection
 
         # Handle different volume shapes properly
         if volume.ndim == 3:  # (depth, height, width)
@@ -192,7 +309,7 @@ def run_luna_detection(model, device: torch.device, dicom_dir: str) -> Tuple[dic
 
         volume_tensor = volume_tensor.to(device)
 
-        print(f"    🔢 Volume tensor shape for LUNA16: {volume_tensor.shape}")
+        # print(f"    🔢 Volume tensor shape for LUNA16: {volume_tensor.shape}")
         print(f"    🎯 Using FULL RESOLUTION - no additional interpolation needed!")
 
         # Skip interpolation - LUNA16TestDataLoader already provides optimal resolution
@@ -236,7 +353,15 @@ def run_luna_detection(model, device: torch.device, dicom_dir: str) -> Tuple[dic
 
         print(f"    🔍 Processed {patch_count} patches")
         print(f"    📊 Average nodule confidence: {avg_confidence:.4f}")
-        print(f"    🎯 Detected nodules (>{confidence_threshold}): {len(detected_nodules)}")
+        print(f"    🎯 Raw detections (>{confidence_threshold}): {len(detected_nodules)}")
+
+        # IMPROVEMENT 1: Apply Non-Maximum Suppression to remove overlapping detections
+        if detected_nodules:
+            detected_nodules = apply_nms_3d(detected_nodules, iou_threshold=0.3, patch_size=patch_size)
+            print(f"    ✨ After NMS (IoU<0.3): {len(detected_nodules)} nodules")
+
+        # IMPROVEMENT 2: Size-based filtering (currently no-op, needs segmentation)
+        # detected_nodules = filter_nodules_by_size(detected_nodules, spacing_mm=1.0)
 
         nodule_count = len(detected_nodules)
 
@@ -267,7 +392,8 @@ def run_luna_detection(model, device: torch.device, dicom_dir: str) -> Tuple[dic
             'detected_nodules': detected_nodules,
             'pathology_localization': pathology_localization,
             'avg_confidence': avg_confidence,
-            'patch_count': patch_count
+            'patch_count': patch_count,
+            'volume': volume  # NEW: Return volume for cancer classifier (in [0,1] range)
         }, f"Success (avg_conf: {avg_confidence:.3f}, patches: {patch_count})"
 
     except Exception as exc:  # pragma: no cover - logging path
@@ -313,11 +439,15 @@ def run_ksl_analysis(ksl_analyzer, zip_path: str):
         return None, str(exc)
 
 
+from .cancer_inference import run_cancer_classification
+
+
 __all__ = [
     "extract_dicom_metadata",
     "run_covid_triage",
     "run_luna_detection",
     "run_ksl_analysis",
+    "run_cancer_classification",  # NEW: Cancer malignancy classification
     "load_nifti_volume",
     "_sample_slices",
 ]

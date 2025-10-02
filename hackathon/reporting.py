@@ -59,7 +59,7 @@ def create_excel_output(results: Iterable[dict], workspace_path: str) -> tuple[P
 
         # Determine most dangerous pathology type
         pathology_type = ""
-        if result['pathology'] == 1:
+        if result.get('pathology') == 1:
             if result.get('nodule_count', 0) > 0:
                 pathology_type = "nodules_detected"
             elif result.get('ksl_available', False):
@@ -67,24 +67,32 @@ def create_excel_output(results: Iterable[dict], workspace_path: str) -> tuple[P
             else:
                 pathology_type = "pathological_changes"
 
+        # Set processing status. Default to Failure if status is not explicitly SUCCESS.
+        processing_status = 'Success' if result.get('status') == 'SUCCESS' else 'Failure'
+
         output_data.append({
             'path_to_study': result.get('case', 'unknown') + '.zip',
-            'study_uid': result['study_uid'],
-            'series_uid': result['series_uid'],
-            'probability_of_pathology': result['probability_of_pathology'],
-            'pathology': result['pathology'],
-            'processing_status': 'Success' if result['status'] == 'SUCCESS' else 'Failure',
-            'time_of_processing': result['processing_time'],
+            'study_uid': result.get('study_uid', 'UNKNOWN'),
+            'series_uid': result.get('series_uid', 'UNKNOWN'),
+            'probability_of_pathology': result.get('probability_of_pathology', 0.5),
+            'pathology': result.get('pathology', 1),  # Default to pathology on error
+            'processing_status': processing_status,
+            'time_of_processing': result.get('processing_time', 0.0),
             'most_dangerous_pathology_type': pathology_type,
             'pathology_localization': localization_str,
-            'nodule_count': result.get('nodule_count', 0),
-            'luna_confidence': result.get('luna_avg_confidence', 0.0),
-            'covid_probability': result.get('covid_probability', 0.5),
-            'ksl_score': result.get('ksl_z_profile_score', 0.5),
-            'timestamp': datetime.now().isoformat()
+            'error_details': result.get('error', '')  # Add error details column
         })
 
     df = pd.DataFrame(output_data)
+    
+    # Define columns in order
+    columns_order = [
+        'path_to_study', 'study_uid', 'series_uid', 'probability_of_pathology',
+        'pathology', 'processing_status', 'time_of_processing',
+        'most_dangerous_pathology_type', 'pathology_localization', 'error_details'
+    ]
+    df = df[columns_order]
+
 
     # Save Excel file (required by hackathon)
     excel_path = Path(workspace_path) / "hackathon_test_results.xlsx"

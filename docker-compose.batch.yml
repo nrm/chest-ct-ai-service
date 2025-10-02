@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  radiassist-batch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: radiassist-batch
+    command: python batch_process.py --input /data/input --output /data/output/results.xlsx --workers 1
+    volumes:
+      # Папка с ZIP файлами для обработки
+      - ${INPUT_DIR:-./input}:/data/input:ro
+      # Папка для выходных результатов
+      - ${OUTPUT_DIR:-./output}:/data/output
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 8G
+
+# Использование:
+#
+# 1. Базовый запуск (текущие папки):
+#    docker-compose -f docker-compose.batch.yml up
+#
+# 2. Указать свои папки:
+#    INPUT_DIR=/path/to/studies OUTPUT_DIR=/path/to/results docker-compose -f docker-compose.batch.yml up
+#
+# 3. CPU режим (без GPU):
+#    docker-compose -f docker-compose.batch.yml up --no-deps radiassist-batch
+#
+# 4. Параллельная обработка (2 воркера):
+#    Измените command: python batch_process.py --input /data/input --output /data/output/results.xlsx --workers 2

@@ -144,7 +144,7 @@ class DICOMLoader:
                 elif '.' not in file_path.name:
                     # Files without extension might be DICOM
                     try:
-                        pydicom.dcmread(file_path, stop_before_pixels=True)
+                        pydicom.dcmread(file_path, force=True, stop_before_pixels=True)
                         dicom_files.append(file_path)
                     except:
                         continue
@@ -194,7 +194,7 @@ class DICOMLoader:
         spacing_zyx = (spacing[2], spacing[1], spacing[0])  # Convert to (Z, Y, X)
 
         # Extract DICOM metadata
-        sample_ds = pydicom.dcmread(dicom_files[0], stop_before_pixels=True)
+        sample_ds = pydicom.dcmread(dicom_files[0], force=True, stop_before_pixels=True)
 
         study_uid = getattr(sample_ds, 'StudyInstanceUID', 'UNKNOWN')
         series_uid = getattr(sample_ds, 'SeriesInstanceUID', 'UNKNOWN')

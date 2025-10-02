@@ -46,7 +46,11 @@ class TestDataLoader:
         # Find DICOM files (with or without .dcm extension)
         dicom_files = []
         for file_path in dicom_dir.rglob("*"):
-            if file_path.is_file() and (file_path.suffix == '.dcm' or ('.' not in file_path.name and len(file_path.name) >= 4)):
+            if file_path.is_file() and (
+                file_path.suffix.lower() == '.dcm' or
+                ('.' not in file_path.name and len(file_path.name) >= 4) or
+                file_path.name.startswith(("CT_", "MR_", "CR_", "DX_"))  # Cancer dataset format
+            ):
                 dicom_files.append(file_path)
 
         if not dicom_files:

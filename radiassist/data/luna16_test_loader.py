@@ -19,15 +19,17 @@ from scipy import ndimage
 class LUNA16TestDataLoader:
     """Load and process test datasets from ZIP archives for LUNA16 detection"""
 
-    def __init__(self, test_data_dir: Optional[Path] = None, max_slices: int = 160):
+    def __init__(self, test_data_dir: Optional[Path] = None, max_slices: int = 160, resize_inplane: bool = True):
         """
         Args:
             test_data_dir: Directory containing test data
             max_slices: Maximum number of slices to process (default 160)
                        Reduces computation time while preserving coverage
+            resize_inplane: Whether to resize in-plane to 512x512 (default True)
         """
         self.test_data_dir = Path(test_data_dir) if test_data_dir else None
         self.max_slices = max_slices
+        self.resize_inplane = resize_inplane
 
     def load_dicom_directory(self, dicom_dir: str) -> np.ndarray:
         """Load DICOM files from directory with FULL RESOLUTION for LUNA16"""
@@ -36,7 +38,11 @@ class LUNA16TestDataLoader:
         # Find DICOM files (with or without .dcm extension)
         dicom_files = []
         for file_path in dicom_dir.rglob("*"):
-            if file_path.is_file() and (file_path.suffix == '.dcm' or ('.' not in file_path.name and len(file_path.name) >= 4)):
+            if file_path.is_file() and (
+                file_path.suffix.lower() == '.dcm' or
+                ('.' not in file_path.name and len(file_path.name) >= 4) or
+                file_path.name.startswith(("CT_", "MR_", "CR_", "DX_"))  # Cancer dataset format
+            ):
                 dicom_files.append(file_path)
 
         if not dicom_files:
@@ -50,7 +56,7 @@ class LUNA16TestDataLoader:
 
         for dicom_file in dicom_files:
             try:
-                ds = pydicom.dcmread(dicom_file)
+                ds = pydicom.dcmread(dicom_file, force=True)
                 if hasattr(ds, 'pixel_array'):
                     # Get slice position for proper ordering
                     slice_position = float(getattr(ds, 'SliceLocation', 0))
@@ -113,6 +119,10 @@ class LUNA16TestDataLoader:
 
             # High-quality resampling with spline interpolation
             volume = ndimage.zoom(volume, scale_factors, order=3, prefilter=True)
+
+            # CRITICAL: Clip interpolation artifacts to [0, 1] range
+            # Spline interpolation can create values outside [0, 1]
+            volume = np.clip(volume, 0.0, 1.0)
         print(f"  ✅ Final LUNA16 volume shape: {volume.shape}")
 
         # Limit number of slices for computational efficiency
@@ -125,8 +135,12 @@ class LUNA16TestDataLoader:
             print(f"  ✅ Slices after limiting: {volume.shape}")
 
         # Resize in-plane to 512x512 if needed (LUNA16 standard)
-        target_size = (512, 512)
-        if volume.shape[-2:] != target_size:  # Check last 2 dimensions
+        if self.resize_inplane:
+            target_size = (512, 512)
+        else:
+            target_size = volume.shape[-2:]  # Keep native resolution
+
+        if self.resize_inplane and volume.shape[-2:] != target_size:  # Check last 2 dimensions
             print(f"  🔄 Resizing in-plane from {volume.shape[-2:]} to {target_size}...")
 
             # Handle different volume shapes
@@ -135,7 +149,8 @@ class LUNA16TestDataLoader:
                 for i in range(volume.shape[0]):
                     zoom_factors = [target_size[j] / volume.shape[j+1] for j in range(2)]
                     resized_volume[i] = ndimage.zoom(volume[i], zoom_factors, order=3, prefilter=True)
-                volume = resized_volume
+                # Clip interpolation artifacts
+                volume = np.clip(resized_volume, 0.0, 1.0)
             elif len(volume.shape) == 4:  # Edge case: (1, slices, H, W) - flatten first
                 print(f"  🔧 Handling 4D volume: {volume.shape}")
                 volume = volume.squeeze(0)  # Remove first dimension
@@ -143,7 +158,8 @@ class LUNA16TestDataLoader:
                 for i in range(volume.shape[0]):
                     zoom_factors = [target_size[j] / volume.shape[j+1] for j in range(2)]
                     resized_volume[i] = ndimage.zoom(volume[i], zoom_factors, order=3, prefilter=True)
-                volume = resized_volume
+                # Clip interpolation artifacts
+                volume = np.clip(resized_volume, 0.0, 1.0)
             else:
                 print(f"  ⚠️  Unexpected volume shape: {volume.shape}, skipping resize")
 

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import torch
 
 from radiassist.models.covid19_classifier import COVID19Classifier
-from radiassist.models.luna16_detector import LUNA16NoduleDetector
+
+# LUNA16 and Cancer models DISABLED (2025-10-02)
+# from radiassist.models.luna16_detector import LUNA16NoduleDetector
+# from cancer.models import CancerNoduleClassifier
 
 
 def load_covid_model(workspace_path: str, device: torch.device) -> Optional[COVID19Classifier]:
@@ -56,44 +60,14 @@ def load_covid_model(workspace_path: str, device: torch.device) -> Optional[COVI
     return model
 
 
-def load_luna_model(workspace_path: str, device: torch.device) -> Optional[LUNA16NoduleDetector]:
-    """Load the most recent LUNA16 detector model if available."""
-    # Try local API models first, then fallback to workspace
-    local_model_dir = Path(__file__).parent.parent / "models"
-    workspace_model_dir = Path(workspace_path) / "models"
-
-    # Check local models first
-    local_luna_models = sorted(local_model_dir.glob("luna16_detector_*.pth"))
-    workspace_luna_models = sorted(workspace_model_dir.glob("luna16_detector_*.pth"))
-
-    luna_models = local_luna_models if local_luna_models else workspace_luna_models
-
-    if not luna_models:
-        print("❌ LUNA16 model not found")
-        return None
-
-    latest_model = luna_models[-1]
-    print(f"🔍 Loading LUNA16 model: {latest_model}")
-
-    detector = LUNA16NoduleDetector(
-        in_channels=1,
-        num_classes=2,
-        feature_maps=[32, 64, 128, 256],
-        use_attention=True,
-        use_checkpoint=False,
-    )
-
-    load_kwargs = {"map_location": device}
-    try:
-        checkpoint = torch.load(latest_model, weights_only=False, **load_kwargs)
-    except TypeError:
-        checkpoint = torch.load(latest_model, **load_kwargs)
-
-    detector.load_state_dict(checkpoint["model_state_dict"])
-    detector.to(device)
-    detector.eval()
-    print("✅ LUNA16 model loaded successfully")
-    return detector
+def load_luna_model(workspace_path: str, device: torch.device) -> None:
+    """LUNA16 model DISABLED (2025-10-02) - not used in production."""
+    return None
 
 
-__all__ = ["load_covid_model", "load_luna_model"]
+def load_cancer_ensemble(workspace_path: str, device: torch.device) -> None:
+    """Cancer classifier DISABLED (2025-10-02) - not used in production."""
+    return None
+
+
+__all__ = ["load_covid_model", "load_luna_model", "load_cancer_ensemble"]

@@ -23,8 +23,9 @@ from .inference import (
     run_covid_triage,
     run_ksl_analysis,
     run_luna_detection,
+    run_cancer_classification,  # NEW: Cancer malignancy classification
 )
-from .models import load_covid_model, load_luna_model
+from .models import load_covid_model, load_luna_model, load_cancer_ensemble
 from .reporting import create_excel_output, print_resource_usage
 
 # Optional KSL analyzer setup
@@ -72,6 +73,7 @@ class HackathonTester:
         self.ksl_analyzer = self._init_ksl_analyzer()
         self.covid_model = None
         self.luna_model = None
+        self.cancer_models = None  # NEW: Cancer malignancy classifier ensemble
         self._load_models()
         self.aggregator = MedicalAggregator(self.case_ground_truth, self.ksl_analyzer)
         self.hackathon_summary: Optional[dict] = None
@@ -92,7 +94,18 @@ class HackathonTester:
     def _load_models(self):
         print("Loading trained models...")
         self.covid_model = load_covid_model(str(self.workspace_path), self.device)
-        self.luna_model = load_luna_model(str(self.workspace_path), self.device)
+
+        # DISABLED: LUNA16 and Cancer models (2025-10-02)
+        # Reason: High processing time (~60s/case) with minimal benefit
+        # - Cancer: Spec=22% (too many FP)
+        # - LUNA16: Expensive preprocessing with marginal accuracy gain
+        # Decision: Use COVID19 + KSL only for fast, reliable triage
+        self.luna_model = None
+        self.cancer_models = None
+
+        print("⚠️  LUNA16 detector DISABLED (fast mode)")
+        print("⚠️  Cancer classifier DISABLED (fast mode)")
+        print("✅ Using COVID19 + KSL only")
 
     # ------------------------------------------------------------------
     # Core inference helpers
@@ -103,6 +116,11 @@ class HackathonTester:
         case_name = Path(zip_path).stem
         ground_truth_label = self.case_ground_truth.get(case_name, -1)
         print(f"\n🔍 Testing case: {case_name}")
+        if ground_truth_label != -1:
+            gt_label = "PATHOLOGY" if ground_truth_label == 1 else "NORMAL"
+            print(f"  ✅ Ground truth: {ground_truth_label} ({gt_label})")
+        else:
+            print(f"  ⚠️  Ground truth: unknown")
 
         start_time = time.time()
 
@@ -137,7 +155,12 @@ class HackathonTester:
                     "validation_confidence": metadata.get("validation_confidence", 0.0),
                     "covid_probability": 0.5,  # Default uncertain
                     "nodule_count": 0,
-                    "pathology_probability": 0.5,
+                    "cancer_probability": 0.0,  # NEW: No cancer analysis if validation failed
+                    "cancer_status": "Skipped (validation failed)",  # NEW
+                    "cancer_available": False,  # NEW
+                    "cancer_prediction": 0,  # NEW
+                    "cancer_malignant_count": 0,  # NEW
+                    "probability_of_pathology": 0.5,
                     "pathology": 1,  # Err on side of caution - flag as pathological
                     "processing_time": processing_time,
                     "ground_truth": ground_truth_label,
@@ -161,12 +184,25 @@ class HackathonTester:
                 detected_nodules = luna_result['detected_nodules']
                 pathology_localization = luna_result['pathology_localization']
                 luna_avg_confidence = luna_result['avg_confidence']
+                luna_volume = luna_result.get('volume', None)  # NEW: Get preprocessed volume
             else:
                 # Fallback for old return format
                 nodule_count = luna_result
                 detected_nodules = []
                 pathology_localization = None
                 luna_avg_confidence = 0.0
+                luna_volume = None
+
+            # NEW: Cancer malignancy classification
+            print("  🎗️  Running cancer malignancy classification...")
+            cancer_prob, cancer_meta, cancer_status = run_cancer_classification(
+                self.cancer_models,
+                self.device,
+                dicom_dir,
+                detected_nodules,
+                luna_volume=luna_volume,  # NEW: Pass LUNA16 volume for coordinate compatibility
+                sensitivity_threshold=0.15  # For Sens=100% (screening mode)
+            )
 
             print("  🧬 Running KSL Z-profile analysis...")
             ksl_result, ksl_status = run_ksl_analysis(self.ksl_analyzer, zip_path)
@@ -178,6 +214,8 @@ class HackathonTester:
                 case_name,
                 ksl_result,
                 ground_truth_label,
+                cancer_prob=cancer_prob,  # NEW: Pass cancer probability
+                cancer_malignant_count=cancer_meta.get('malignant_count', 0),  # NEW: Pass malignant nodule count
             )
 
             processing_time = time.time() - start_time
@@ -195,6 +233,11 @@ class HackathonTester:
                 "detected_nodules_count": len(detected_nodules),
                 "pathology_localization": pathology_localization,
                 "luna_avg_confidence": luna_avg_confidence,
+                "cancer_probability": cancer_prob,  # NEW: Cancer malignancy probability
+                "cancer_status": cancer_status,  # NEW: Cancer classification status
+                "cancer_available": cancer_meta.get("available", False),  # NEW: Cancer classifier available
+                "cancer_prediction": cancer_meta.get("cancer_prediction", 0),  # NEW: Cancer binary prediction
+                "cancer_malignant_count": cancer_meta.get("malignant_count", 0),  # NEW: Malignant nodule count
                 "probability_of_pathology": aggregation["probability"],
                 "pathology": aggregation["prediction"],
                 "confidence": aggregation["confidence"],
@@ -241,6 +284,31 @@ class HackathonTester:
                     }
                 )
 
+            # Print final result summary
+            final_pred = aggregation["prediction"]
+            final_prob = aggregation["probability"]
+            pred_label = "PATHOLOGY" if final_pred == 1 else "NORMAL"
+
+            print(f"\n  {'='*50}")
+            print(f"  📋 FINAL RESULT:")
+            print(f"     Prediction: {final_pred} ({pred_label})")
+            print(f"     Probability: {final_prob:.4f}")
+            print(f"     Method: {aggregation.get('method', 'original')}")
+
+            if ground_truth_label != -1:
+                correct = "✅ CORRECT" if final_pred == ground_truth_label else "❌ WRONG"
+                gt_label = "PATHOLOGY" if ground_truth_label == 1 else "NORMAL"
+                print(f"     Ground truth: {ground_truth_label} ({gt_label})")
+                print(f"     {correct}")
+
+                if final_pred != ground_truth_label:
+                    if final_pred == 1 and ground_truth_label == 0:
+                        print(f"     ⚠️  FALSE POSITIVE")
+                    elif final_pred == 0 and ground_truth_label == 1:
+                        print(f"     ⚠️  FALSE NEGATIVE")
+
+            print(f"  {'='*50}\n")
+
             return result_dict
 
     def _locate_dicom_directory(self, root_dir: str) -> Optional[str]:
@@ -248,7 +316,12 @@ class HackathonTester:
             dicom_candidates = [
                 f
                 for f in files
-                if f.endswith(".dcm") or ("." not in f and len(f) >= 4)
+                if (
+                    f.endswith(".dcm") or
+                    f.endswith(".DCM") or
+                    ("." not in f and len(f) >= 4) or
+                    f.startswith(("CT_", "MR_", "CR_", "DX_"))  # Cancer dataset format
+                )
             ]
             if dicom_candidates:
                 print(
@@ -269,12 +342,18 @@ class HackathonTester:
             "covid_status": "No DICOM files found",
             "nodule_count": 0,
             "luna_status": "Skipped",
+            "cancer_probability": 0.0,  # NEW
+            "cancer_status": "Skipped (error)",  # NEW
+            "cancer_available": False,  # NEW
+            "cancer_prediction": 0,  # NEW
+            "cancer_malignant_count": 0,  # NEW
             "probability_of_pathology": 0.5,
             "pathology": 0,
             "confidence": 0.0,
             "ground_truth": -1,
             "processing_time": time.time() - start_time,
             "status": "ERROR",
+            "method": "error",  # NEW
             "error": "No DICOM files found",
         }
 

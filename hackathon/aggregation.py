@@ -17,6 +17,9 @@ class MedicalAggregator:
         case_name: str,
         ksl_result: Optional[dict] = None,
         ground_truth_label: Optional[int] = None,
+        cancer_prob: Optional[float] = None,  # NEW: Cancer malignancy probability
+        cancer_threshold: float = 0.70,  # Balanced threshold for specificity (may be overridden)
+        cancer_malignant_count: Optional[int] = None,  # NEW: Count of malignant nodules
     ) -> dict:
         if ground_truth_label is None:
             ground_truth_label = self.case_ground_truth.get(case_name, -1)
@@ -24,6 +27,16 @@ class MedicalAggregator:
         print(f"    🧭 Enhanced medical aggregation for {case_name}:")
         print(f"    📊 COVID19 probability: {covid_prob:.4f}")
         print(f"    🔬 Nodule count: {nodule_count}")
+        if cancer_prob is not None:
+            print(f"    🎗️  Cancer probability: {cancer_prob:.4f}")
+        if cancer_malignant_count is not None:
+            print(f"    🔴 Malignant nodule count: {cancer_malignant_count}")
+
+        # CANCER OVERRIDE DISABLED (2025-10-02)
+        # Cancer information is computed and logged, but does NOT affect decision
+        # Decision made by: COVID19 + KSL hybrid logic (or COVID19 fallback)
+        # Reason: High FP rate on benign cases (Spec=22% on cancer val set)
+        print(f"    ℹ️  Cancer override DISABLED - using COVID19+KSL only")
 
         if (
             self.ksl_analyzer
@@ -101,6 +114,7 @@ class MedicalAggregator:
             "confidence": confidence,
             "ground_truth": ground_truth_label,
             "reason": reason,
+            "method": "original",  # Original aggregation (no KSL, no cancer override)
         }
 
 

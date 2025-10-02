@@ -17,4 +17,3 @@ data/temp/
 .DS_Store
 *.swp
 *.swo
-api/models/covid19_classifier_fold1_best_auc.pth

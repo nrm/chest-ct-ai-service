@@ -17,9 +17,13 @@ NOTE: Heuristic lung segmentation via threshold + morphology. Tune thresholds as
 """
 
 import argparse, os, csv
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
+
+# Suppress pydicom warnings about invalid UIDs (common in Russian DICOM files)
+warnings.filterwarnings('ignore', category=UserWarning, module='pydicom')
 
 import pydicom
 from pydicom.filereader import dcmread
