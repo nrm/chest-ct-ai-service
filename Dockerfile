@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1: System dependencies and Python packages
 # =============================================================================
-FROM python:3.11-slim as dependencies
+FROM python:3.11-slim AS dependencies
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # =============================================================================
 # Stage 2: Application code
 # =============================================================================
-FROM dependencies as application
+FROM dependencies AS application
 
 # Copy application source code (frequently changing files)
 COPY main.py .
@@ -36,10 +36,13 @@ COPY radiassist/ ./radiassist/
 # Copy utility modules
 COPY utils/ ./utils/
 
+# Copy segmentation modules
+COPY segment_and_viz_2/ ./segment_and_viz_2/
+
 # =============================================================================
 # Stage 3: Model weights (large files, change rarely)
 # =============================================================================
-FROM application as models
+FROM application AS models
 
 # Copy model weights (large files, cached separately)
 COPY models/ ./models/
@@ -47,7 +50,7 @@ COPY models/ ./models/
 # =============================================================================
 # Stage 4: Runtime configuration
 # =============================================================================
-FROM models as runtime
+FROM models AS runtime
 
 # Create directories for runtime data
 RUN mkdir -p /tmp/radiassist /app/data /app/logs

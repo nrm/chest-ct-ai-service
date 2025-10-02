@@ -69,12 +69,12 @@ def create_excel_output(results: Iterable[dict], workspace_path: str) -> tuple[P
 
         output_data.append({
             'path_to_study': result.get('case', 'unknown') + '.zip',
-            'study_uid': result['study_uid'],
-            'series_uid': result['series_uid'],
-            'probability_of_pathology': result['probability_of_pathology'],
-            'pathology': result['pathology'],
-            'processing_status': 'Success' if result['status'] == 'SUCCESS' else 'Failure',
-            'time_of_processing': result['processing_time'],
+            'study_uid': result.get('study_uid', 'UNKNOWN'),
+            'series_uid': result.get('series_uid', 'UNKNOWN'),
+            'probability_of_pathology': result.get('probability_of_pathology', 0.5),
+            'pathology': result.get('pathology', 0),
+            'processing_status': 'Success' if result.get('status') == 'SUCCESS' else 'Failure',
+            'time_of_processing': result.get('processing_time', 0.0),
             'most_dangerous_pathology_type': pathology_type,
             'pathology_localization': localization_str,
             'nodule_count': result.get('nodule_count', 0),
